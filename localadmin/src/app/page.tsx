@@ -3,17 +3,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 
-// MD5 hash function for password comparison
-const md5Hash = async (text: string): Promise<string> => {
-  if (typeof window !== 'undefined') {
-    // Client-side MD5 implementation
-    const CryptoJS = await import('crypto-js')
-    return CryptoJS.MD5(text).toString()
-  }
-  // Server-side fallback (shouldn't be used in this context)
-  return text
-}
-
 // Admin authentication interface
 interface Admin {
   id_admin: number
@@ -52,78 +41,24 @@ const AuthPrompt = ({ onAuth }: { onAuth: (admin: Admin) => void }) => {
     setError('')
 
     try {
-      // First, get all admin records that match the pseudo/email
-      const { data: adminRecords, error } = await supabase
-        .from('admin')
-        .select('*')
-        .or(`pseudo_admin.eq.${pseudo},mail_admin.eq.${pseudo}`)
+      const response = await fetch('/api/admin/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pseudo, password })
+      })
 
-      if (error) {
-        console.error('Auth error:', error)
-        setError('Erreur de connexion à la base de données')
+      const result = await response.json()
+
+      if (!response.ok) {
+        setError(result.error || 'Erreur de connexion')
         return
       }
 
-      if (!adminRecords || adminRecords.length === 0) {
-        setError('Utilisateur non trouvé')
-        return
-      }
-
-      // Check password against each matching record
-      let authenticatedAdmin = null
-      for (const admin of adminRecords) {
-        // Try plain text password first
-        if (admin.pwd_admin === password) {
-          authenticatedAdmin = admin
-          break
-        }
-        
-        // Try MD5 hash
-        const hashedPassword = await md5Hash(password)
-        if (admin.pwd_admin === hashedPassword) {
-          authenticatedAdmin = admin
-          break
-        }
-      }
-
-      if (!authenticatedAdmin) {
-        setError('Mot de passe incorrect')
-      } else {
-        // Create a Supabase auth session using the admin's email
-        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-          email: authenticatedAdmin.mail_admin || `admin${authenticatedAdmin.id_admin}@localadmin.com`,
-          password: 'temp-password-' + authenticatedAdmin.id_admin
-        })
-
-        if (authError) {
-          // If auth fails, try to sign up first then sign in
-          await supabase.auth.signUp({
-            email: authenticatedAdmin.mail_admin || `admin${authenticatedAdmin.id_admin}@localadmin.com`,
-            password: 'temp-password-' + authenticatedAdmin.id_admin,
-            options: {
-              data: {
-                admin_id: authenticatedAdmin.id_admin,
-                name: `${authenticatedAdmin.prenom_admin} ${authenticatedAdmin.nom_admin}`
-              }
-            }
-          })
-          
-          // Try signing in again
-          await supabase.auth.signInWithPassword({
-            email: authenticatedAdmin.mail_admin || `admin${authenticatedAdmin.id_admin}@localadmin.com`,
-            password: 'temp-password-' + authenticatedAdmin.id_admin
-          })
-        }
-
-        // Generate dynamic bearer token
-        const bearerToken = `admin_${authenticatedAdmin.id_admin}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-        
-        // Store admin session and bearer token
-        localStorage.setItem('admin_session', JSON.stringify(authenticatedAdmin))
-        localStorage.setItem('bearer_token', bearerToken)
-        
-        onAuth(authenticatedAdmin)
-      }
+      // Store admin session and session token
+      localStorage.setItem('admin_session', JSON.stringify(result.admin))
+      localStorage.setItem('bearer_token', result.sessionToken)
+      
+      onAuth(result.admin)
     } catch (err) {
       console.error('Login error:', err)
       setError('Erreur de connexion')
