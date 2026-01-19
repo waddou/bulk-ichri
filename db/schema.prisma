@@ -1,0 +1,308 @@
+// export/schema.prisma
+// Ce fichier représente la structure exacte et modernisée de la base de données Ichri (Supabase).
+// Validé le 2026-01-13 par l'Expert Data Architect.
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ============================================================================
+// UTILISATEURS ET AUTHENTIFICATION
+// ============================================================================
+
+model Admin {
+  id     Int    @id @default(autoincrement()) @map("id_admin")
+  nom    String @map("nom_admin") @db.VarChar(50)
+  prenom String @map("prenom_admin") @db.VarChar(50)
+  tel    String @map("tel_admin") @db.VarChar(50)
+  mail   String @map("mail_admin") @db.VarChar(50)
+  droits Int    @map("droits_admin")
+  pseudo String @map("pseudo_admin") @db.VarChar(50)
+  pwd    String @map("pwd_admin") @db.VarChar(100)
+  img    String @map("img_admin") @db.VarChar(150)
+
+  @@map("admin")
+}
+
+model Annonceur {
+  id              Int           @id @default(autoincrement()) @map("id_annonceur")
+  nom             String        @db.VarChar(70)
+  tel             String        @db.VarChar(70)
+  mail            String        @db.VarChar(70)
+  password        String        @db.VarChar(70)
+  etatAnnonceur   EtatAnnonceur @default(F) @map("etat_annonceur")
+  telImg          String        @map("tel_img") @db.VarChar(70)
+  dateInscription DateTime      @default(now()) @map("date_inscription")
+
+  // Relations
+  annonces    Annonce[]
+  activations ActivationAnnonceur[]
+  contacts    ContactAnnonceur[]
+
+  @@map("annonceurs")
+}
+
+enum EtatAnnonceur {
+  F @map("F")
+  T @map("T")
+}
+
+// ============================================================================
+// ANNONCES ET CONTENU (VERSION MODERNISÉE)
+// ============================================================================
+
+model Annonce {
+  id              Int      @id @default(autoincrement()) @map("id_annonce")
+  titre           String   @map("titre_annonce") @db.VarChar(70)
+  url             String   @map("url_annonce") @db.VarChar(150)
+  descriptif      String   @map("descriptif_annonce") @db.Text
+  prixRaw         String?  @map("prix_annonce") @db.VarChar(50)
+  active          Boolean  @map("active_annonceur")
+  etat            Boolean  @map("etat_annonce")
+  
+  annonceurId     Int      @map("id_annonceur")
+  categorieId     Int      @map("id_categorie")
+  sousCategorieId Int      @map("id_sous_categorie")
+  gouvernoratId   Int      @map("gouvernorat")
+  villeId         Int      @map("ville")
+  marqueId        Int?     @map("marque")
+  
+  datePublication DateTime @map("date_publication") @db.Date
+  vues            Int      @default(0)
+
+  // --- Colonnes Modernes (Supabase Native) ---
+  imagesList      String[] @default([]) @map("images_list")
+  attributes      Json     @default("{}")
+  priceSearch     BigInt?  @map("price_search")
+  searchIndex     Unsupported("tsvector")? @map("search_index")
+  
+  // --- SEO Intégré ---
+  metaTitle       String?  @map("meta_title") @db.VarChar(200)
+  metaDescription String?  @map("meta_description") @db.VarChar(300)
+
+  // Relations
+  annonceur     Annonceur     @relation(fields: [annonceurId], references: [id], onDelete: Cascade)
+  categorie     Categorie     @relation(fields: [categorieId], references: [id])
+  sousCategorie SousCategorie @relation(fields: [sousCategorieId], references: [id])
+  gouvernorat   Gouvernorat   @relation(fields: [gouvernoratId], references: [id])
+  ville         Ville         @relation(fields: [villeId], references: [id])
+  marque        Marque?       @relation(fields: [marqueId], references: [id])
+
+  contacts          Contact[]
+  contactsAnnonceur ContactAnnonceur[]
+
+  @@index([annonceurId])
+  @@index([categorieId])
+  @@index([sousCategorieId])
+  @@index([priceSearch])
+  @@map("annonces")
+}
+
+// ============================================================================
+// LANDING PAGES (LE HUB SEO UNIFIÉ)
+// ============================================================================
+
+model LandingPage {
+  id              Int      @id @default(autoincrement())
+  slug            String   @unique @db.VarChar(200)
+  active          Boolean  @default(true)
+  
+  // Critères de filtrage
+  categoryId      Int?     @map("category_id")
+  subCategoryId   Int?     @map("sub_category_id")
+  gouvernoratId   Int?     @map("gouvernorat_id")
+  villeId         Int?     @map("ville_id")
+  searchTerm      String?  @map("search_term") @db.VarChar(100)
+  
+  // Contrôle manuel
+  featuredIds     Int[]    @default([]) @map("featured_ids")
+  bannedIds       Int[]    @default([]) @map("banned_ids")
+  
+  // Contenu Éditorial (Le SEO)
+  metaTitle       String?  @map("meta_title") @db.VarChar(200)
+  metaDescription String?  @map("meta_description") @db.VarChar(300)
+  h1              String?  @db.VarChar(300)
+  h2              String?  @db.VarChar(300)
+  textTop         String?  @map("text_top") @db.Text
+  textBottom      String?  @map("text_bottom") @db.Text
+  tags            String?  @db.VarChar(300)
+  
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  categorie     Categorie?     @relation(fields: [categoryId], references: [id])
+  sousCategorie SousCategorie? @relation(fields: [subCategoryId], references: [id])
+  gouvernorat   Gouvernorat?   @relation(fields: [gouvernoratId], references: [id])
+  ville         Ville?         @relation(fields: [villeId], references: [id])
+
+  @@map("landing_pages")
+}
+
+// ============================================================================
+// CATÉGORIES ET RÉFÉRENCES (ENRICHIES SEO)
+// ============================================================================
+
+model Categorie {
+  id      Int    @id @default(autoincrement()) @map("id_categorie")
+  url     String @map("url_categorie") @db.VarChar(30)
+  libelle String @map("libelle_categorie") @db.VarChar(25)
+
+  // SEO Standard
+  metaTitle       String? @map("meta_title") @db.VarChar(200)
+  metaDescription String? @map("meta_description") @db.VarChar(300)
+  h1              String? @db.VarChar(300)
+  h2              String? @db.VarChar(300)
+  textTop         String? @map("text_top") @db.Text
+  textBottom      String? @map("text_bottom") @db.Text
+  keywords        String? @db.VarChar(300)
+
+  // Relations
+  annonces       Annonce[]
+  sousCategories SousCategorie[]
+  landingPages   LandingPage[]
+
+  @@map("categories")
+}
+
+model SousCategorie {
+  id          Int    @id @default(autoincrement()) @map("id_sous_categorie")
+  libelle     String @map("libelle_sous_categorie") @db.VarChar(50)
+  idCategorie Int    @map("id_categorie")
+  url         String @map("url_sous_categorie") @db.VarChar(50)
+
+  // SEO Standard
+  metaTitle       String? @map("meta_title") @db.VarChar(200)
+  metaDescription String? @map("meta_description") @db.VarChar(300)
+  h1              String? @db.VarChar(300)
+  h2              String? @db.VarChar(300)
+  textTop         String? @map("text_top") @db.Text
+  textBottom      String? @map("text_bottom") @db.Text
+  keywords        String? @db.VarChar(300)
+
+  // Relations
+  categorie    Categorie     @relation(fields: [idCategorie], references: [id])
+  annonces     Annonce[]
+  landingPages LandingPage[]
+
+  @@index([idCategorie])
+  @@map("sous_categories")
+}
+
+model Gouvernorat {
+  id      Int    @id @default(autoincrement()) @map("id_gouvernorat")
+  libelle String @map("libelle_gouvernorat") @db.VarChar(30)
+  url     String @map("url_gouvernorat") @db.VarChar(50)
+
+  // SEO Standard
+  metaTitle       String? @map("meta_title") @db.VarChar(200)
+  metaDescription String? @map("meta_description") @db.VarChar(300)
+  h1              String? @db.VarChar(300)
+  h2              String? @db.VarChar(300)
+  textTop         String? @map("text_top") @db.Text
+  textBottom      String? @map("text_bottom") @db.Text
+  keywords        String? @db.VarChar(300)
+
+  // Relations
+  annonces     Annonce[]
+  villes       Ville[]
+  landingPages LandingPage[]
+
+  @@map("gouvernorats_tn")
+}
+
+model Ville {
+  id              Int    @id @default(autoincrement()) @map("id_ville")
+  libelle         String @map("libelle_ville") @db.VarChar(30)
+  codeGouvernorat Int    @map("code_gouvernorat")
+  url             String @map("url_ville") @db.VarChar(50)
+
+  // SEO Standard
+  metaTitle       String? @map("meta_title") @db.VarChar(200)
+  metaDescription String? @map("meta_description") @db.VarChar(300)
+  h1              String? @db.VarChar(300)
+  h2              String? @db.VarChar(300)
+  textTop         String? @map("text_top") @db.Text
+  textBottom      String? @map("text_bottom") @db.Text
+  keywords        String? @db.VarChar(300)
+
+  // Relations
+  gouvernorat  Gouvernorat   @relation(fields: [codeGouvernorat], references: [id])
+  annonces     Annonce[]
+  landingPages LandingPage[]
+
+  @@index([codeGouvernorat])
+  @@map("villes_tn")
+}
+
+model Marque {
+  id              Int     @id @default(autoincrement()) @map("id_marque")
+  libelle         String  @map("libelle_marque") @db.VarChar(50)
+  url             String  @map("url_marque") @db.VarChar(50)
+  categorieMarque Int     @map("categorie_marque")
+
+  // Relations
+  annonces Annonce[]
+
+  @@map("marques")
+}
+
+// ============================================================================
+// CONTACTS ET PAIEMENTS
+// ============================================================================
+
+model Contact {
+  id          Int      @id @default(autoincrement()) @map("id_contact")
+  nom         String   @db.VarChar(70)
+  email       String   @db.VarChar(70)
+  tel         String   @db.VarChar(50)
+  text        String   @db.Text
+  annonceId   Int      @map("id_annonce")
+  dateContact DateTime @map("date_contact") @db.Date
+
+  // Relations
+  annonce Annonce @relation(fields: [annonceId], references: [id], onDelete: Cascade)
+
+  @@index([annonceId])
+  @@map("contact")
+}
+
+model ContactAnnonceur {
+  id              Int    @id @default(autoincrement())
+  msg             String @db.Text
+  annonceId       Int    @map("annonce_id")
+  titreAnnonce    String @map("titre_annonce") @db.VarChar(300)
+  urlAnnonce      String @map("url_annonce") @db.VarChar(300)
+  annonceurId     Int    @map("annonceur_id")
+  nomAnnonceur    String @map("nom_annonceur") @db.VarChar(300)
+  emailAnnonceur  String @map("email_annonceur") @db.VarChar(300)
+  nomInternaute   String @map("nom_internaute") @db.VarChar(300)
+  emailInternaute String @map("email_internaute") @db.VarChar(300)
+  date            String @db.VarChar(50)
+
+  // Relations
+  annonce   Annonce   @relation(fields: [annonceId], references: [id], onDelete: Cascade)
+  annonceur Annonceur @relation(fields: [annonceurId], references: [id], onDelete: Cascade)
+
+  @@index([annonceId])
+  @@index([annonceurId])
+  @@map("contact_annonceur")
+}
+
+model ActivationAnnonceur {
+  id            Int @id @default(autoincrement()) @map("id_activation")
+  nbrActivation Int @map("nbr_activation")
+  annonceurId   Int @map("id_annonceur")
+
+  // Relations
+  annonceur Annonceur @relation(fields: [annonceurId], references: [id], onDelete: Cascade)
+
+  @@index([annonceurId])
+  @@map("activation_annonceur")
+}
